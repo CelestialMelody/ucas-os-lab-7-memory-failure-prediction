@@ -1,0 +1,39 @@
+{
+  "config": "configs/stage1_type_a_full.json",
+  "feature_source": "results/stage1_type_a_full_features.csv",
+  "output": "results/stage1_type_a_full_metrics_ablation.csv",
+  "missing_cached_feature_groups": [],
+  "elapsed_seconds": 2243.0641258209944,
+  "max_files": 0,
+  "samples": 57171,
+  "positive_samples": 768,
+  "feature_count_full": 422,
+  "ablations": {
+    "baseline": [
+      "baseline"
+    ],
+    "baseline_bsfe": [
+      "baseline",
+      "bsfe"
+    ],
+    "baseline_time_patch": [
+      "baseline",
+      "time_patch"
+    ],
+    "baseline_time_point": [
+      "baseline",
+      "time_point"
+    ],
+    "baseline_bsfe_time_patch": [
+      "baseline",
+      "bsfe",
+      "time_patch"
+    ],
+    "baseline_bsfe_time_patch_time_point": [
+      "baseline",
+      "bsfe",
+      "time_patch",
+      "time_point"
+    ]
+  }
+}

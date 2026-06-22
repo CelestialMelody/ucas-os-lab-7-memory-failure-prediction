@@ -1,0 +1,13 @@
+ablation,feature_groups,model,precision,recall,f1,samples,positive_samples,feature_count
+baseline,baseline,random_forest_small,0.19943019943019943,0.8373205741626795,0.32213529682466635,63060,836,48
+baseline,baseline,logistic_regression,0.15207877461706784,0.8313397129186603,0.2571217166111728,63060,836,48
+baseline_bsfe,baseline+bsfe,random_forest_small,0.24925595238095238,0.8014354066985646,0.38024971623155507,63060,836,360
+baseline_bsfe,baseline+bsfe,logistic_regression,0.21368057734546594,0.8145933014354066,0.33855331841909025,63060,836,360
+baseline_bsfe_time_patch,baseline+bsfe+time_patch,random_forest_small,0.24152693542632894,0.8098086124401914,0.3720802418246771,63060,836,399
+baseline_bsfe_time_patch,baseline+bsfe+time_patch,logistic_regression,0.18391699092088198,0.8480861244019139,0.30228096354721806,63060,836,399
+baseline_bsfe_time_patch_time_point,baseline+bsfe+time_patch+time_point,random_forest_small,0.5034916201117319,0.8624401913875598,0.6358024691358025,63060,836,422
+baseline_bsfe_time_patch_time_point,baseline+bsfe+time_patch+time_point,logistic_regression,0.18781456953642384,0.8480861244019139,0.307525482541748,63060,836,422
+baseline_time_patch,baseline+time_patch,random_forest_small,0.24152693542632894,0.8098086124401914,0.3720802418246771,63060,836,399
+baseline_time_patch,baseline+time_patch,logistic_regression,0.18391699092088198,0.8480861244019139,0.30228096354721806,63060,836,399
+baseline_time_point,baseline+time_point,random_forest_small,0.6354992076069731,0.9593301435406698,0.7645376549094376,63060,836,71
+baseline_time_point,baseline+time_point,logistic_regression,0.13915857605177995,0.8744019138755981,0.24010510757102974,63060,836,71

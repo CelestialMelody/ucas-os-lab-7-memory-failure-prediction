@@ -1,0 +1,14 @@
+{
+  "data_path": "../data/stage1_feather/type_B",
+  "ticket_path": "../data/stage1_feather/ticket.csv",
+  "feature_path": "results/stage1_type_b_full_features.csv",
+  "model_path": "results/stage1_type_b_full_model.joblib",
+  "metrics_path": "results/stage1_type_b_full_metrics.csv",
+  "importance_path": "results/stage1_type_b_full_feature_importance.csv",
+  "submission_path": "results/stage1_type_b_full_submission.csv",
+  "prediction_period_days": 7,
+  "lead_minutes": 15,
+  "window_seconds": [900, 3600, 21600, 86400],
+  "feature_groups": ["baseline", "bsfe", "time_patch", "time_point"],
+  "random_state": 42
+}

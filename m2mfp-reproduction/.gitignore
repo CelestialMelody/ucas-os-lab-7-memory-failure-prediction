@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+.uv-cache/
+.pytest_cache/
+data/
+**/data/
+*.joblib
+*.pkl
+*.pickle
+results/*_features.csv
+PRIVATE_PROJECT_OVERVIEW.md
+private_docs/
+.DS_Store

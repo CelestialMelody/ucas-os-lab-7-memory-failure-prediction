@@ -1,0 +1,13 @@
+{
+  "data_path": "../data/stage1_feather/type_A",
+  "ticket_path": "../data/stage1_feather/ticket.csv",
+  "feature_path": "results/stage1_type_a_m2mfp_smoke_features.csv",
+  "model_path": "results/stage1_type_a_m2mfp_smoke_model.joblib",
+  "metrics_path": "results/stage1_type_a_m2mfp_smoke_metrics.csv",
+  "importance_path": "results/stage1_type_a_m2mfp_smoke_feature_importance.csv",
+  "submission_path": "results/stage1_type_a_m2mfp_smoke_submission.csv",
+  "prediction_period_days": 7,
+  "lead_minutes": 15,
+  "window_seconds": [900, 3600, 21600, 86400],
+  "random_state": 42
+}

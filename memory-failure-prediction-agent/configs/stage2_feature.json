@@ -1,0 +1,11 @@
+{
+  "feature_root": "../data/stage2_feature",
+  "ticket_path": "../data/stage2_feature/failure_ticket.csv",
+  "output_dir": "results/stage2_feature",
+  "prediction_period_days": 7,
+  "lead_minutes": 15,
+  "validation_quantile": 0.8,
+  "target_start": 1722441600,
+  "target_end": 1727712000,
+  "random_state": 42
+}

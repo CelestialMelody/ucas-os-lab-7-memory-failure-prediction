@@ -1,0 +1,29 @@
+# Python and local environments
+__pycache__/
+*.py[cod]
+.venv/
+.uv-cache/
+.pytest_cache/
+.mypy_cache/
+
+# Local data: too large for the Git repository
+data/
+**/data/
+
+# Model binaries and local artifacts
+*.joblib
+*.pkl
+*.pickle
+
+# Uncompressed intermediate feature caches are generated from data or restored
+# from the committed .csv.gz files.
+**/results/*_features.csv
+**/results/stage2_feature/stage2_train_features.csv
+
+# Private project notes that are useful locally but not part of the public repo
+PRIVATE_PROJECT_OVERVIEW.md
+private_docs/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db

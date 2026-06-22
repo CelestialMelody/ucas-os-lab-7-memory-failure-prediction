@@ -1,0 +1,3 @@
+ablation,feature_groups,model,precision,recall,f1,samples,positive_samples,feature_count
+baseline_time_point,baseline+time_point,random_forest_small,0.6354992076069731,0.9593301435406698,0.7645376549094376,63060,836,71
+baseline_time_point,baseline+time_point,logistic_regression,0.13915857605177995,0.8744019138755981,0.24010510757102974,63060,836,71

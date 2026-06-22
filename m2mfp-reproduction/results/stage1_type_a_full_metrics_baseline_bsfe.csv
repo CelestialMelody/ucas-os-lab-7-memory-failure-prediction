@@ -1,0 +1,3 @@
+ablation,feature_groups,model,precision,recall,f1,samples,positive_samples,feature_count
+baseline_bsfe,baseline+bsfe,random_forest_small,0.26632739609838846,0.8177083333333334,0.4017914267434421,57171,768,360
+baseline_bsfe,baseline+bsfe,logistic_regression,0.21877156659765357,0.8255208333333334,0.3458810692853246,57171,768,360
