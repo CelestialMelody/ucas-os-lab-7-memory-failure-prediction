@@ -36,8 +36,9 @@ ONE_DAY = 86400
 class Stage2Config:
     """SmartHW/SmartMem 第二阶段特征训练配置。
 
-    task2 面向“完成比赛式预测任务”：读取官方预提取特征，训练模型，调阈值，
-    并生成可提交的 `serial_number/prediction_timestamp/serial_number_type` 表。
+    task2 读取官方预提取特征，训练模型，搜索阈值，并生成可提交的
+    `serial_number/prediction_timestamp/serial_number_type` 表。目标期边界和
+    `submission_top_k` 放在配置中，便于复查 submission 的生成条件。
     """
 
     feature_root: Path
@@ -68,8 +69,9 @@ class Stage2Config:
 def iter_feature_files(root: Path) -> list[tuple[Path, str]]:
     """枚举 Stage2 官方特征文件。
 
-    SmartHW 阶段二特征数据按 type_A/type_B 分目录保存；每个 feather 文件
-    对应一个 DIMM 的时间序列特征。返回时同时携带 DIMM 类型，便于生成提交。
+    SmartHW 阶段二特征数据按 type_A/type_B 分目录保存。每个 feather 文件对应
+    一个 DIMM 的时间序列特征。返回时携带 DIMM 类型，供 per-type 训练和提交
+    文件使用。
     """
 
     files: list[tuple[Path, str]] = []
@@ -102,16 +104,19 @@ def feature_columns(df: pd.DataFrame) -> list[str]:
 def align_prediction_features(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
     """按训练列顺序对齐预测特征，缺失窗口列补 0。
 
-    Stage2 官方 feather 在 type_A/type_B 间列空间不完全一致：部分 type_B
-    文件没有 6h 窗口特征。训练缓存表合并后会包含完整列集，因此提交生成
-    必须显式补齐缺列，才能和模型训练时的特征矩阵一致。
+    Stage2 官方 feather 在 type_A/type_B 间列空间不完全一致：部分 type_B 文件
+    缺少 6h 窗口特征。训练缓存表合并后包含完整列集，因此提交生成必须按训练列
+    顺序重排。缺失列补 0，多余列丢弃，避免预测期输入矩阵和训练期列空间不一致。
     """
 
     return df.reindex(columns=cols, fill_value=0).fillna(0)
 
 
 def add_meta(row: pd.Series, serial_number: str, sn_type: str, label: int) -> dict[str, object]:
-    """给官方特征行追加监督学习所需的元信息。"""
+    """给官方特征行追加监督学习所需的元信息。
+
+    元信息列不参与模型训练，但用于时间切分、per-type 分组和 submission 输出。
+    """
 
     out = row.to_dict()
     out["serial_number"] = serial_number
@@ -124,12 +129,12 @@ def add_meta(row: pd.Series, serial_number: str, sn_type: str, label: int) -> di
 def build_training_table(config: Stage2Config) -> pd.DataFrame:
     """把每个 DIMM 的时间序列特征压成训练样本表。
 
-    正样本：对 ticket 中有故障的 DIMM，在故障前 `prediction_period_days`
-    到 `lead_minutes` 的预测区间内取最后一个特征点。
+    正样本：对 ticket 中有故障的 DIMM，在故障前 `prediction_period_days` 到
+    `lead_minutes` 的预测区间内取最后一个特征点。该点模拟在 lead time 之前
+    发出告警。
 
     负样本：对故障 DIMM 取更早的安全时间点；对无故障 DIMM 取最后一个
-    特征点。这个采样方式是可运行的 baseline，后续 agent 会自动尝试更多
-    窗口、负采样比例和 hard negative 方案。
+    特征点。故障 DIMM 的负样本必须早于预测窗口，避免把故障前片段标成负类。
     """
 
     ticket = read_ticket(config.ticket_path)
@@ -167,9 +172,8 @@ def build_training_table(config: Stage2Config) -> pd.DataFrame:
 def build_models(random_state: int) -> dict[str, object]:
     """构造 task2 的候选模型库。
 
-    优先使用 CPU 可运行模型，保证没有 CUDA 时也能复现。若环境安装了
-    LightGBM/XGBoost，会自动加入候选；后续如需 GPU，可在 XGBoost 参数中
-    增加 `tree_method="hist"` 与 `device="cuda"` 做可选加速。
+    默认使用 CPU 可运行模型，保证无 GPU 环境也能复现。若环境安装了
+    LightGBM/XGBoost，会自动加入候选。参数保持固定，便于比较模型类型差异。
     """
 
     models: dict[str, object] = {
@@ -217,8 +221,8 @@ def build_models(random_state: int) -> dict[str, object]:
 def time_split(features: pd.DataFrame, quantile: float) -> tuple[pd.DataFrame, pd.DataFrame]:
     """按预测时间做近似时序验证切分。
 
-    内存故障预测通常存在时间分布漂移，所以默认用较早时间训练、较晚时间验证。
-    如果切分后某一侧只有单一类别，则退回随机切分，避免模型评估不可用。
+    内存故障预测存在时间分布漂移风险，所以默认用较早时间训练、较晚时间验证。
+    如果切分后某一侧只有单一类别，则退回随机切分，保证指标仍可计算。
     """
 
     cutoff = int(features["prediction_timestamp"].quantile(quantile))
@@ -237,8 +241,8 @@ def time_split(features: pd.DataFrame, quantile: float) -> tuple[pd.DataFrame, p
 def threshold_search(y_true: pd.Series, score: np.ndarray) -> pd.DataFrame:
     """搜索概率阈值，按 F1/Recall/Precision 排序。
 
-    SmartMem 类任务通常正负样本极不平衡，默认 0.5 阈值不一定合理。因此
-    阈值搜索是比赛优化流程中的必要步骤。
+    SmartMem 类任务正负样本比例悬殊，默认 0.5 阈值通常不能给出最佳 F1。
+    因此每个模型都在验证集上搜索阈值，并把完整曲线写入 CSV。
     """
 
     rows = []
@@ -258,9 +262,8 @@ def threshold_search(y_true: pd.Series, score: np.ndarray) -> pd.DataFrame:
 def train_and_evaluate(config: Stage2Config, features: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, object]]:
     """训练候选模型、验证并保存最佳模型信息。
 
-    这里先在时序验证集上为每个模型搜索阈值，再用全量训练表重训最佳模型。
-    这样保存的 bundle 可直接用于 submission 生成，而指标仍来自未参与训练的
-    验证时间段。
+    先在时序验证集上为每个模型搜索阈值，再用全量训练表重训最佳模型。保存的
+    bundle 可直接用于 submission 生成；指标仍来自未参与训练的验证时间段。
     """
 
     train, valid = time_split(features, config.validation_quantile)
@@ -309,8 +312,8 @@ def train_and_evaluate(config: Stage2Config, features: pd.DataFrame) -> tuple[pd
 def generate_submission(config: Stage2Config, bundle: dict[str, object]) -> pd.DataFrame:
     """在目标预测时间段上生成提交文件。
 
-    先按验证集最佳阈值筛选告警；若目标期分布漂移导致没有任何样本过阈值，
-    则退回 top-k 最高风险 DIMM，保证流程始终产出代码生成的提交表。
+    先按验证集最佳阈值筛选告警。若目标期没有样本过阈值，则退回 top-k 最高风险
+    DIMM，生成非空候选文件。top-k 只表示相对风险排序，不代表隐藏测试效果。
     """
 
     model = bundle["model"]
@@ -333,7 +336,7 @@ def generate_submission(config: Stage2Config, bundle: dict[str, object]) -> pd.D
         selected = target_df[target_df["score"] >= threshold]
         if selected.empty:
             continue
-        # 每个 DIMM 只保留最高分告警，避免同一序列号重复刷屏。
+        # 每个 DIMM 只保留最高分告警，避免同一序列号在提交文件中重复出现。
         best = selected.sort_values("score", ascending=False).iloc[0]
         rows.append(
             {
@@ -346,8 +349,8 @@ def generate_submission(config: Stage2Config, bundle: dict[str, object]) -> pd.D
     submission = pd.DataFrame(rows)
     score_df = pd.DataFrame(score_rows).sort_values("score", ascending=False) if score_rows else pd.DataFrame()
     if score_df.empty and config.submission_top_k > 0:
-        # 未标注目标期可能和训练期分布差异很大。若阈值策略没有选出任何样本，
-        # 使用 top-k 作为兜底，保证比赛式输出文件包含候选告警。
+        # 目标期无标签，分数分布可能低于验证期。若阈值策略没有选出样本，
+        # 使用 top-k 生成候选告警文件。
         all_scores = []
         for idx, (path, sn_type) in enumerate(files, start=1):
             if idx % 5000 == 0:
@@ -382,7 +385,7 @@ def generate_submission_from_train_table(config: Stage2Config, bundle: dict[str,
     """调试用提交生成函数。
 
     它只读取已缓存的 `stage2_train_features.csv`，速度比重新遍历所有 feather
-    文件快，适合在改阈值、改 top-k 策略时快速检查输出格式。
+    文件快，适合检查阈值和 top-k 输出格式。
     """
 
     path = config.output_dir / "stage2_train_features.csv"
@@ -405,9 +408,8 @@ def generate_submission_from_train_table(config: Stage2Config, bundle: dict[str,
 def load_agent_best_thresholds(config: Stage2Config) -> dict[str, float]:
     """读取 agent 最佳 per-type 阈值，缺失时退回验证结果中的默认值。
 
-    `agent_best_config.json` 中记录的是验证集搜索得到的分类型阈值。若该文件
-    尚未生成，使用已知最佳实验的阈值作为可复现默认值，保证 submission 入口
-    不依赖手工传参。
+    `agent_best_config.json` 中记录验证集搜索得到的分类型阈值。若该文件缺失，
+    使用已知最佳实验阈值作为可复现默认值，保证 submission 入口不依赖手工传参。
     """
 
     path = config.output_dir / "agent_best_config.json"
@@ -427,8 +429,8 @@ def load_agent_best_thresholds(config: Stage2Config) -> dict[str, float]:
 def train_best_per_type_bundle(config: Stage2Config) -> dict[str, object]:
     """训练 agent 最佳策略：XGBoost + 全部特征 + per-type。
 
-    每个 DIMM 类型单独训练一个模型，但共享同一组官方特征列。这样能保留
-    type_A/type_B 分布差异，同时避免为两个类型维护两套不可比较的特征空间。
+    每个 DIMM 类型单独训练一个模型，但共享同一组官方特征列。这样保留
+    type_A/type_B 的分布差异，同时让两个类型的输入列顺序一致。
     """
 
     try:
@@ -459,9 +461,9 @@ def train_best_per_type_bundle(config: Stage2Config) -> dict[str, object]:
 def generate_best_per_type_submission(config: Stage2Config, bundle: dict[str, object]) -> pd.DataFrame:
     """使用最佳 per-type agent 策略遍历 Stage2 feature 目标期并生成提交。
 
-    阈值命中的样本会先被选入提交；如果目标预测期所有分数都低于验证阈值，
-    再从每个 DIMM 的最高风险点中取 top-k。最终 score CSV 保留分数和阈值，
-    用于解释“为什么本次 200 行候选来自 top-k 兜底”。
+    阈值命中的样本会先被选入提交。若目标预测期所有分数都低于验证阈值，
+    再从每个 DIMM 的最高风险点中取 top-k。score CSV 保留分数和阈值，用于
+    说明 200 行候选来自 top-k 兜底。
     """
 
     models = bundle["models"]
@@ -484,8 +486,8 @@ def generate_best_per_type_submission(config: Stage2Config, bundle: dict[str, ob
             continue
         pred_frame = align_prediction_features(target_df, cols)
         target_df["score"] = model.predict_proba(pred_frame)[:, 1]
-        # 无论是否超过阈值，都记录每个 DIMM 在目标期的最高风险点；这些记录是
-        # top-k 兜底和报告中分数分布图的来源。
+        # 无论是否超过阈值，都记录每个 DIMM 在目标期的最高风险点。这些记录用于
+        # top-k 兜底和分数分布图。
         best_any = target_df.sort_values("score", ascending=False).iloc[0]
         all_score_rows.append(
             {
@@ -510,8 +512,8 @@ def generate_best_per_type_submission(config: Stage2Config, bundle: dict[str, ob
     score_df = pd.DataFrame(score_rows).sort_values("score", ascending=False) if score_rows else pd.DataFrame()
     submission = pd.DataFrame(rows)
     if submission.empty and config.submission_top_k > 0:
-        # 离线结果中验证阈值没有选出目标期告警时会走到这里。该兜底只保证
-        # 提交格式和候选告警列表可用，不代表目标期隐藏测试 F1。
+        # 验证阈值没有选出目标期告警时会走到这里。该兜底只生成候选告警列表，
+        # 不代表目标期隐藏测试 F1。
         all_score_df = pd.DataFrame(all_score_rows).sort_values("score", ascending=False)
         score_df = all_score_df.head(config.submission_top_k)
         submission = score_df[["serial_number", "prediction_timestamp", "serial_number_type"]].copy()

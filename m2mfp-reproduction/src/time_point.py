@@ -5,14 +5,16 @@ import pandas as pd
 
 
 def _safe_numeric(series: pd.Series) -> pd.Series:
+    """把输入转成数值列，无法解析的值按 0 处理。"""
+
     return pd.to_numeric(series, errors="coerce").fillna(0)
 
 
 def _max_run_count(times: np.ndarray, interval_seconds: int) -> int:
     """统计给定间隔内的最长连续 CE 链。
 
-    M2-MFP time-point 的重点是 CE 在故障前的突然密集出现。这里用最长连续链
-    近似论文中的时间点突变信号。
+    time-point 关注故障前 CE 是否在短时间内连续出现。最长连续链比窗口总数
+    更能反映局部爆发。
     """
 
     if len(times) <= 1:
@@ -30,6 +32,12 @@ def _max_run_count(times: np.ndarray, interval_seconds: int) -> int:
 
 
 def _recent_gap_stats(times: np.ndarray, end_time: int) -> dict[str, float]:
+    """计算最近 CE 距离和事件间隔。
+
+    这些统计只使用 `end_time` 之前的日志。`last_gap_seconds` 越小，说明预测
+    时刻附近刚出现过 CE；`burstiness` 用于描述最近间隔相对历史间隔的压缩程度。
+    """
+
     if len(times) == 0:
         return {
             "last_gap_seconds": 0.0,
@@ -56,6 +64,8 @@ def _recent_gap_stats(times: np.ndarray, end_time: int) -> dict[str, float]:
 
 
 def _dominant_ratio(series: pd.Series) -> float:
+    """计算最高频地址值占比，用于判断短窗口内是否出现局部集中。"""
+
     if series.empty:
         return 0.0
     counts = series.astype(str).value_counts(dropna=False)
@@ -74,6 +84,9 @@ def time_point_features(
     1. 最近 CE 到预测时间点的距离。
     2. 短窗口相对长窗口的 CE 激增比例。
     3. 短窗口内 CE 是否集中在同一 device/bank/row/column/cell。
+
+    这些规则特征维度少，含义直接。它们在 full run 中表现强，说明故障前的
+    时间邻近性和空间集中度对当前数据有稳定信号。
     """
 
     if df.empty:

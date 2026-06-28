@@ -29,7 +29,11 @@ except Exception:
 
 @dataclass(frozen=True)
 class AgentStrategy:
-    """SmartHW agent 的单次实验策略。"""
+    """SmartHW agent 的单次实验策略。
+
+    一个策略固定模型、特征组、采样方式和决策方式。搜索时只比较这些显式维度，
+    避免把参数调优和策略贡献混在一起。
+    """
 
     name: str
     model: str
@@ -82,10 +86,9 @@ if XGBClassifier is not None:
 def select_feature_columns(features: pd.DataFrame, feature_set: str) -> list[str]:
     """按 agent 的特征组名称选择训练列。
 
-    Stage2 官方特征列名已经编码了窗口、空间和 bit 统计含义。本函数用列名 token
-    做轻量分组，用于回答“时间强度特征”和“空间/bit 特征”各自能贡献多少的问题。
-    若某组没有命中列，退回全量列，
-    避免因为官方数据列名变化导致实验直接失败。
+    Stage2 官方特征列名已经编码窗口、空间和 bit 统计含义。本函数用列名 token
+    做轻量分组，用于比较时间强度特征和空间/bit 特征。若某组没有命中列，退回
+    全量列，避免官方数据列名变化导致实验中断。
     """
 
     cols = feature_columns(features)
@@ -105,8 +108,8 @@ def select_feature_columns(features: pd.DataFrame, feature_set: str) -> list[str
 def build_model(name: str, random_state: int):
     """构造 agent 策略中的候选模型。
 
-    这些参数是固定的轻量配置，目的在于公平比较策略维度。XGBoost/LightGBM
-    只有在环境安装对应包时才会进入策略库。
+    这些参数是固定的轻量配置，用于比较策略维度。XGBoost/LightGBM 只有在环境
+    安装对应包时才会进入策略库。
     """
 
     if name == "random_forest":
@@ -169,8 +172,8 @@ def json_ready(value):
 def apply_sampling(train: pd.DataFrame, strategy: AgentStrategy, random_state: int) -> pd.DataFrame:
     """应用采样策略。
 
-    balanced 让负样本数量接近正样本 5 倍；hard_negative 优先保留 CE 强度较高
-    的负样本，模拟比赛方案中常见的 hard negative mining。
+    `balanced` 让负样本数量接近正样本 5 倍；`hard_negative` 优先保留 CE 强度
+    较高的负样本。采样只作用于训练集，验证集保持原始比例。
     """
 
     if strategy.sampling == "none":
@@ -198,7 +201,7 @@ def score_model(model, frame: pd.DataFrame, cols: list[str]) -> np.ndarray:
     """返回正类风险分数。
 
     大多数模型支持 `predict_proba`；若模型只提供硬预测，则退化为 0/1 分数。
-    后续阈值搜索和 top-k 统一消费这个一维风险分数。
+    阈值搜索和 top-k 都消费同一个一维风险分数。
     """
 
     if hasattr(model, "predict_proba"):
@@ -209,9 +212,9 @@ def score_model(model, frame: pd.DataFrame, cols: list[str]) -> np.ndarray:
 def evaluate_scores(y_true: pd.Series, scores: np.ndarray, strategy: AgentStrategy) -> dict[str, float]:
     """按策略定义把风险分数转为 precision/recall/F1。
 
-    `threshold` 模式在验证集上搜索最优阈值；`top_k` 模式模拟提交文件只允许
-    固定告警数量时的选择方式。两者都保留在 agent 中，方便解释为什么最终
-    本地指标选择阈值策略，而 submission 生成仍需要 top-k 兜底。
+    `threshold` 模式在验证集上搜索最佳阈值；`top_k` 模式模拟提交文件只允许
+    固定告警数量时的选择方式。两者都保留在 agent 中，用于区分本地验证指标
+    和 submission 生成策略。
     """
 
     if strategy.threshold_mode == "top_k" and strategy.top_k:
@@ -232,17 +235,16 @@ def run_one_strategy(features: pd.DataFrame, config: Stage2Config, strategy: Age
     """执行一个 agent 策略并返回统一指标行。
 
     per-type 策略会在同一全局时间切分下分别训练 type_A/type_B 模型，再把两个
-    验证子集的分数拼回一起算总体 F1。这样结果可与全局单模型策略比较，并避免
-    验证集切分差异引入额外变量。
+    验证子集的分数拼回一起算总体 F1。这样结果可与全局单模型策略比较，且验证
+    时间范围保持一致。
     """
 
     frames = [("", features)]
     global_train = None
     global_valid = None
     if strategy.per_type:
-        # 为了和非 per-type 策略公平比较，先做一次全局时间切分，再在切分后的
-        # train/valid 内按类型分别训练和验证。这样验证集规模、时间范围和正样本
-        # 数与全局 baseline 保持一致。
+        # 先做一次全局时间切分，再在 train/valid 内按类型分别训练和验证。
+        # 这样 per-type 与单模型策略共享同一验证时间段。
         global_train, global_valid = time_split(features, config.validation_quantile)
         frames = [(str(sn_type), part.copy()) for sn_type, part in features.groupby("serial_number_type")]
 
@@ -313,7 +315,7 @@ def run_agent(config_path: Path, dry_run: bool, rebuild_features: bool, max_stra
     """运行 agent 策略登记、搜索和最佳配置落盘。
 
     产物分三类：registry 记录计划实验，ablation_results 记录指标，runtime_log
-    记录耗时和样本规模。这样报告可以同时解释“试了什么”和“为什么选最佳策略”。
+    记录耗时和样本规模。报告据此说明试验范围、最佳策略和运行成本。
     """
 
     config = Stage2Config.from_json(config_path)

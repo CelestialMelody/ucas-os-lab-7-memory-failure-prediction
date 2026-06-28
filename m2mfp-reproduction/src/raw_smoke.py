@@ -34,7 +34,8 @@ ONE_DAY = 86400
 class Config:
     """task1 的最小配置。
 
-    这个类放在 task1 目录下，使 task1 可以作为独立的 M2-MFP 复现/检验项目运行。
+    配置只描述 Stage1 原始日志路径、标签路径、输出路径和窗口参数。这样 task1
+    可以脱离早期开发目录运行，也便于报告中说明每个结果来自哪个配置文件。
     """
 
     data_path: Path
@@ -55,9 +56,9 @@ class Config:
     def from_json(cls, path: Path) -> "Config":
         """读取 JSON 配置，并把相对路径解析到 task1 项目根目录。
 
-        配置文件位于 `task1_m2mfp_reproduction/configs/`，因此 `path.parent.parent`
-        就是 task1 根目录。数据路径使用 `../../data/...`，会继续解析到仓库根目录
-        下的数据集。
+        配置文件位于 `m2mfp-reproduction/configs/`，所以 `path.parent.parent`
+        是 task1 根目录。数据路径可通过 `MEMFAIL_DATA_ROOT` 覆盖，避免把
+        GB 级 feather 数据放进 Git 仓库。
         """
 
         raw = json.loads(path.read_text(encoding="utf-8"))
@@ -87,8 +88,9 @@ class Config:
 def load_ticket(config: Config) -> pd.DataFrame:
     """读取故障 ticket，并统一成 `serial_number/failure_time` 两列。
 
-    Stage1 原始数据里的 ticket 是 M2-MFP 复现任务的标签来源：某个 DIMM
-    在 `failure_time` 发生 UE/故障，则故障前的观察窗口可以构造为正样本。
+    Stage1 原始数据里的 ticket 是标签来源。某个 DIMM 在 `failure_time`
+    发生 UE/故障时，只能使用该时间之前的 CE 日志构造样本，避免把故障后信息
+    泄漏到特征中。
     """
 
     ticket = pd.read_csv(config.ticket_path)
@@ -132,8 +134,8 @@ def select_data_files(config: Config, max_files: int) -> list[Path]:
 def ce_storm_count(times: pd.Series, interval_seconds: int = 60, threshold: int = 10) -> int:
     """统计 CE storm 次数。
 
-    这是 SmartMem/M2-MFP 类方法常用的时间点特征：短时间内连续出现大量 CE，
-    往往意味着内存单元或局部结构已经进入不稳定状态。
+    短时间内连续出现大量 CE 往往比单纯累计数量更接近故障前告警形态。
+    这个规则为 baseline 和 time-point 提供一致的 CE burst 度量。
     """
 
     values = sorted(int(value) for value in times)
@@ -153,9 +155,9 @@ def ce_storm_count(times: pd.Series, interval_seconds: int = 60, threshold: int 
 def parity_to_matrix(parity: object) -> np.ndarray:
     """把 RetryRdErrLogParity 转为 8x4 的 DQ-Beat 二值矩阵。
 
-    M2-MFP 的 BSFE 模块把 32 位 retry parity 看成空间矩阵：8 行近似表示
-    burst/beat 方向，4 列近似表示 DQ 方向。这里保留这个解释方式，便于后续
-    和 `bsfe.py` 中的高阶 bit 特征对应。
+    BSFE 把 32 位 retry parity 看成空间矩阵：8 行近似表示 burst/beat 方向，
+    4 列近似表示 DQ 方向。baseline 中保留低阶统计，便于和 `bsfe.py` 的
+    高阶 bit 特征做消融对照。
     """
 
     try:
@@ -169,9 +171,8 @@ def parity_to_matrix(parity: object) -> np.ndarray:
 def parity_stats(window_df: pd.DataFrame, prefix: str) -> dict[str, float]:
     """提取轻量 bit/DQ/beat 统计特征。
 
-    完整的 M2-MFP 高阶 BSFE 特征由 `time_patch_features` 调用 `bsfe.py`
-    生成。这里保留一组更直观的低阶统计，便于在报告中解释 RetryRdErrLogParity
-    如何参与预测。
+    高阶 BSFE 特征由 `time_patch_features` 调用 `bsfe.py` 生成。这里保留
+    低阶统计，用于回答 retry parity 是否已经在基础窗口特征中提供了信号。
     """
 
     features: dict[str, float] = {}
@@ -193,8 +194,8 @@ def parity_stats(window_df: pd.DataFrame, prefix: str) -> dict[str, float]:
 def aggregate_window_features(df: pd.DataFrame, end_time: int, window: int) -> dict[str, float]:
     """构造 v1 基础窗口特征。
 
-    这些特征是课程项目 v1 已验证有效的基础时间/空间统计。task1 中保留它们的原因是：复现 M2-MFP 时需要一个
-    可解释的 baseline，与后续 `m2patch_*` 论文特征比较。
+    这些列是本项目自建 baseline，不来自 M2-MFP 论文代码。保留它们是为了
+    衡量 BSFE、time-patch、time-point 相对基础 CE 统计是否增加有效信息。
     """
 
     window_df = df[(df["LogTime"] <= end_time) & (df["LogTime"] > end_time - window)]
@@ -221,7 +222,11 @@ def make_sample(
     label: int,
     config: Config,
 ) -> dict[str, object]:
-    """把单个 DIMM 在某个观察时间点前的日志聚合成一个监督学习样本。"""
+    """把单个 DIMM 在某个预测时间点之前的日志聚合成一个监督学习样本。
+
+    `end_time` 是特征可见性的右边界。所有窗口都使用 `LogTime <= end_time`
+    的日志，保证正样本只看到故障前 lead time 之外的信息。
+    """
 
     row: dict[str, object] = {
         "serial_number": serial_number,
@@ -251,8 +256,9 @@ def feature_columns(features: pd.DataFrame) -> list[str]:
 def filter_feature_groups(features: pd.DataFrame, groups: tuple[str, ...]) -> pd.DataFrame:
     """按消融配置保留特征组。
 
-    baseline 是 `win_*` 基础 CE 统计；time_patch 是 `m2patch_*` 多尺度窗口；
-    bsfe 是 time_patch 中的 bit-level 子列；time_point 是 `m2point_*` 规则。
+    baseline 对应 `win_*` 基础 CE 统计；time_patch 对应 `m2patch_*` 多尺度窗口；
+    bsfe 只取 time_patch 中的 bit-level 子列；time_point 对应 `m2point_*`
+    规则。这个过滤函数决定每个消融实验能看到哪些列。
     """
 
     meta = ["serial_number", "serial_number_type", "prediction_timestamp", "label"]
@@ -275,8 +281,8 @@ def filter_feature_groups(features: pd.DataFrame, groups: tuple[str, ...]) -> pd
 def build_models(random_state: int) -> dict[str, object]:
     """构造 smoke run 使用的小模型集合。
 
-    这里刻意不用过大的模型，保证复现检查可以在普通 CPU 上较快完成。完整
-    调参和 GPU 加速应放到 task2 的 agent/优化流程中。
+    模型规模保持较小，保证 smoke 和 full 消融能在普通 CPU 上完成。任务一
+    评估的是特征组贡献，因此不在这里加入复杂调参。
     """
 
     return {
@@ -298,12 +304,13 @@ def build_models(random_state: int) -> dict[str, object]:
 def build_raw_smoke_features(config: Config, max_files: int) -> pd.DataFrame:
     """从 Stage1 原始 feather 日志构造 M2-MFP smoke 特征表。
 
-    正样本：若 DIMM 在 ticket 中有故障时间，则取故障前 `lead_minutes`
-    处作为预测时刻，标签为 1。
+    正样本：若 DIMM 在 ticket 中有故障时间，则取 `failure_time - lead`
+    作为预测时刻，标签为 1。预测窗口由配置中的 `prediction_period_days`
+    描述，用于定义负样本安全边界。
 
     负样本：对故障 DIMM，取正样本窗口之前更早的安全时间点；对非故障 DIMM，
-    取该 DIMM 最后一条日志作为负样本。这样能在小规模实验里形成基本的
-    正负对照，但不能替代完整比赛数据上的严格评估。
+    取该 DIMM 最后一条日志作为负样本。负样本时间点要早于故障预测窗口，
+    避免把即将故障的观察片段标成负类。
     """
 
     files = select_data_files(config, max_files=max_files)
@@ -348,8 +355,8 @@ def build_raw_smoke_features(config: Config, max_files: int) -> pd.DataFrame:
 def evaluate(features: pd.DataFrame, config: Config) -> pd.DataFrame:
     """用交叉验证评估 smoke 特征表。
 
-    如果正负样本数量太少，自动退化为训练集内评估，避免小数据调试阶段直接
-    报错。正式报告中应优先引用有独立验证切分或完整数据的结果。
+    如果正负样本数量太少，自动退化为训练集内评估，避免小数据调试阶段报错。
+    报告只引用 full run 或明确标注为 smoke 的结果。
     """
 
     cols = feature_columns(features)

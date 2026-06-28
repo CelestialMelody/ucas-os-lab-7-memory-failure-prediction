@@ -9,9 +9,8 @@ import pandas as pd
 def bsfe_feature_names(prefix: str = "bsfe") -> list[str]:
     """生成 BSFE 输出列名。
 
-    M2-MFP 论文 sec4.2 的核心做法是：先把 32 位错误 bit 拆成 8x4 矩阵，
-    再分别沿行方向和列方向提取统计量。这里的列名保留 rowwise/columnwise、
-    pooling 函数和 bit 统计函数，便于和论文模块逐项对应。
+    列名保留 rowwise/columnwise、pooling 函数和 bit 统计函数。这样报告中可以
+    直接说明每列来自 DQ-Beat 矩阵的哪个聚合方向。
     """
 
     names: list[str] = []
@@ -33,8 +32,8 @@ class BSFEExtractor:
     """Binary Spatial Feature Extractor，适配自 M2-MFP sec4.2。
 
     输入是 SmartMem CE 日志中的 `RetryRdErrLogParity`。该字段可解释为 32 位
-    bit 图案，本项目按 8 行 x 4 列转换为 DQ-Beat 矩阵，然后复现论文中
-    “按行/按列提取高阶空间 bit 特征”的思想。
+    bit 图案，本项目按 8 行 x 4 列转换为 DQ-Beat 矩阵，再按行和列提取空间
+    bit 特征。该表示用于捕捉同一次 CE 中 bit 错误是否集中在特定 DQ 或 beat。
     """
 
     row_count: int = 8
@@ -55,6 +54,8 @@ class BSFEExtractor:
         - bit_max_interval：首尾 1 的最大跨度。
         - bit_max_consecutive_length：最长连续 1 的长度。
         - bit_consecutive_length：连续聚集程度的近似计数。
+
+        间隔和连续长度比单纯 bit 数量更能区分离散错误和局部成片错误。
         """
 
         bit_count = binary_string.count("1")
@@ -79,7 +80,11 @@ class BSFEExtractor:
 
     @classmethod
     def _binary_string_map(cls, length: int) -> dict[str, tuple[int, int, int, int, int]]:
-        """预先缓存所有可能 bit 串的特征，避免逐条日志重复计算。"""
+        """预先缓存所有可能 bit 串的特征。
+
+        Stage1 full run 会遍历大量 CE 日志。缓存 4 位和 8 位子串能减少重复计算，
+        同时不改变任何特征定义。
+        """
 
         return {
             bin(value)[2:].zfill(length): cls._features_for_binary_string(bin(value)[2:].zfill(length))
@@ -87,7 +92,7 @@ class BSFEExtractor:
         }
 
     def _row_features(self, rows: list[str]) -> list[int]:
-        """沿矩阵行方向聚合，模拟论文中的 row-wise BSFE。"""
+        """沿矩阵行方向聚合，得到 beat 方向的 bit 分布统计。"""
 
         f_rows = [self._row_map[row] for row in rows]
         max_pool = [max(col) for col in zip(*f_rows)]
@@ -99,7 +104,7 @@ class BSFEExtractor:
         return max_pool + sum_pool + f_max_pool
 
     def _column_features(self, columns: list[str]) -> list[int]:
-        """沿矩阵列方向聚合，模拟论文中的 column-wise BSFE。"""
+        """沿矩阵列方向聚合，得到 DQ 方向的 bit 分布统计。"""
 
         f_columns = [self._column_map[column] for column in columns]
         max_pool = [max(row) for row in zip(*f_columns)]
@@ -111,7 +116,10 @@ class BSFEExtractor:
         return max_pool + sum_pool + f_max_pool
 
     def transform_one(self, parity: object) -> list[int]:
-        """把单条 RetryRdErrLogParity 转为一组 BSFE 特征。"""
+        """把单条 RetryRdErrLogParity 转为一组 BSFE 特征。
+
+        非法或缺失 parity 按 0 处理。这样缺失字段不会被误解释为强错误信号。
+        """
 
         try:
             value = int(parity)
@@ -131,8 +139,8 @@ class BSFEExtractor:
 def add_bsfe_columns(df: pd.DataFrame, parity_col: str = "RetryRdErrLogParity", prefix: str = "bsfe") -> pd.DataFrame:
     """给原始日志表追加 BSFE 列。
 
-    smoke pipeline 主要通过 time-patch 聚合调用 BSFE；这个函数保留给
-    后续消融实验使用，例如比较“原始 CE 统计”与“追加逐条 BSFE 特征”的差异。
+    smoke pipeline 主要通过 time-patch 聚合调用 BSFE。这个函数保留给后续
+    逐条日志级消融使用。
     """
 
     extractor = BSFEExtractor()

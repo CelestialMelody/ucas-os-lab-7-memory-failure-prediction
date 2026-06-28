@@ -31,8 +31,10 @@ def _with_suffix(path: Path, suffix: str) -> Path:
 def run_ablation(config_path: Path, max_files: int, reuse_features: bool = True) -> pd.DataFrame:
     """运行 task1 特征消融。
 
-    默认优先复用配置中的 `feature_path`，避免每次消融都重新遍历 Stage1 原始日志。
-    若缓存不存在或传入 `--rebuild-features`，会生成包含全部特征组的基础表。
+    默认复用配置中的 `feature_path`，避免每个消融配置都重新遍历 Stage1 原始日志。
+    若缓存缺失或传入 `--rebuild-features`，先生成包含全部候选特征组的表，再用
+    `filter_feature_groups` 切出各组。这样不同消融共享同一批样本，结果差异只来自
+    可见特征列。
     """
 
     start = time.perf_counter()
@@ -61,6 +63,8 @@ def run_ablation(config_path: Path, max_files: int, reuse_features: bool = True)
     for name, groups in ABLATIONS.items():
         features = filter_feature_groups(full_features, groups)
         if not feature_columns(features):
+            # 缓存来自旧版本时可能缺少某个特征组。记录 skipped 行比隐式报错更利于
+            # 对照报告中的结果来源。
             metrics = pd.DataFrame(
                 [
                     {
