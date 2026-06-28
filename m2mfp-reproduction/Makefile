@@ -14,11 +14,12 @@ TASK1_FULL_B_CONFIG ?= configs/stage1_type_b_full.json
 TASK1_FULL_AB_CONFIG ?= configs/stage1_type_ab_full.json
 MAX_FILES ?= 300
 
-.PHONY: help restore-caches compile task1-smoke task1-ablation task1-full-a task1-full-b task1-full-ab
+.PHONY: help restore-caches compile figures task1-smoke task1-ablation task1-full-a task1-full-b task1-full-ab
 
 help:
 	@echo "M2-MFP reproduction commands"
 	@echo "  make compile"
+	@echo "  make figures"
 	@echo "  make restore-caches"
 	@echo "  make task1-smoke MAX_FILES=300"
 	@echo "  make task1-ablation MAX_FILES=300"
@@ -32,6 +33,9 @@ restore-caches:
 
 compile:
 	$(PY) -m compileall src
+
+figures:
+	$(PY) ../scripts/make_figures.py --scope task1
 
 task1-smoke:
 	$(PY) src/raw_smoke.py --config $(TASK1_SMOKE_CONFIG) --max-files $(MAX_FILES)

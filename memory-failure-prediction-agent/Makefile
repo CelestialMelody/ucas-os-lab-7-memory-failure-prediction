@@ -10,11 +10,12 @@ TIME := $(TIME_CMD) env MPLCONFIGDIR=$(MPLCONFIGDIR) UV_CACHE_DIR=$(UV_CACHE_DIR
 
 TASK2_CONFIG ?= configs/stage2_feature.json
 
-.PHONY: help restore-caches compile task2-train task2-submission task2-agent task2-agent-quick task2-best-submission
+.PHONY: help restore-caches compile figures task2-train task2-submission task2-agent task2-agent-quick task2-best-submission
 
 help:
 	@echo "Memory failure prediction agent commands"
 	@echo "  make compile"
+	@echo "  make figures"
 	@echo "  make restore-caches"
 	@echo "  make task2-agent-quick"
 	@echo "  make task2-train"
@@ -27,6 +28,9 @@ restore-caches:
 
 compile:
 	$(PY) -m compileall src
+
+figures:
+	$(PY) ../scripts/make_figures.py --scope task2
 
 task2-train:
 	$(TIME) uv run python src/stage2_feature_pipeline.py --config $(TASK2_CONFIG)

@@ -5,12 +5,15 @@ UV_CACHE_DIR ?= $(ROOT)/.uv-cache
 MPLCONFIGDIR ?= /tmp
 export MEMFAIL_DATA_ROOT
 
-.PHONY: help restore-caches compile task1-smoke task1-full-a task1-full-b task1-full-ab task2-agent-quick task2-agent task2-best-submission
+PY := MPLCONFIGDIR=$(MPLCONFIGDIR) UV_CACHE_DIR=$(UV_CACHE_DIR) uv run python
+
+.PHONY: help restore-caches compile figures task1-smoke task1-full-a task1-full-b task1-full-ab task2-agent-quick task2-agent task2-best-submission
 
 help:
 	@echo "OS Lab 7 memory failure prediction"
 	@echo "  make restore-caches"
 	@echo "  make compile"
+	@echo "  make figures"
 	@echo "  make task1-smoke MAX_FILES=300"
 	@echo "  make task1-full-a"
 	@echo "  make task1-full-b"
@@ -26,6 +29,9 @@ restore-caches:
 compile:
 	$(MAKE) -C m2mfp-reproduction compile UV_CACHE_DIR=$(UV_CACHE_DIR) MPLCONFIGDIR=$(MPLCONFIGDIR)
 	$(MAKE) -C memory-failure-prediction-agent compile UV_CACHE_DIR=$(UV_CACHE_DIR) MPLCONFIGDIR=$(MPLCONFIGDIR)
+
+figures:
+	$(PY) scripts/make_figures.py --scope all
 
 task1-smoke:
 	$(MAKE) -C m2mfp-reproduction task1-smoke UV_CACHE_DIR=$(UV_CACHE_DIR) MPLCONFIGDIR=$(MPLCONFIGDIR) MAX_FILES=$(MAX_FILES)
