@@ -60,6 +60,7 @@ make restore-caches
 ```bash
 make help
 make compile
+make figures
 make task2-agent-quick
 ```
 

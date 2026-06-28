@@ -4,7 +4,7 @@
 
 ## Scope
 
-本项目复现和本地适配以下核心机制：
+本项目复现和本地适配以下特征机制：
 
 - BSFE：把 `RetryRdErrLogParity` 转成 8x4 DQ-Beat bit 矩阵并提取空间 bit 特征。
 - time-patch：在 15m/1h/6h 多尺度窗口内聚合时间、空间和 bit 特征。
@@ -12,7 +12,7 @@
 
 评估器使用 Logistic Regression 和轻量 RandomForest。公开 M2-MFP 代码包含
 自定义 decision tree/time-point 模块，但不包含完整私有训练流水线；本项目聚焦
-核心特征思想的实现和本地验证。
+特征思想的实现和本地验证。
 
 ## Layout
 
@@ -61,6 +61,7 @@ make restore-caches
 ```bash
 make help
 make compile
+make figures
 make task1-smoke MAX_FILES=300
 make task1-ablation MAX_FILES=300
 ```

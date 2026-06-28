@@ -1,18 +1,11 @@
 # OS Lab 7: Memory Failure Prediction
 
-This repository contains a course project for memory failure prediction. It is
-organized as two reproducible subprojects:
+This repository contains a course project for memory failure prediction. It is organized as two reproducible subprojects:
 
-- `m2mfp-reproduction/`: reproduces and evaluates M2-MFP-style raw-log features
-  on SmartMem Stage1 CE logs.
-- `memory-failure-prediction-agent/`: trains models, searches agent strategies,
-  and generates an offline candidate submission on SmartHW/SmartMem Stage2
-  extracted features.
+- `m2mfp-reproduction/`: reproduces and evaluates M2-MFP-style raw-log features on SmartMem Stage1 CE logs.
+- `memory-failure-prediction-agent/`: trains models, searches agent strategies, and generates an offline candidate submission on SmartHW/SmartMem Stage2 extracted features.
 
-The repository intentionally does not include the original GB-scale feather
-datasets. It includes code, configs, reports, figures, lightweight metrics, and
-compressed intermediate feature caches so that experiments can be inspected
-without immediately re-reading all raw feather files.
+The repository intentionally does not include the original GB-scale feather datasets. It includes code, configs, reports, figures, lightweight metrics, and compressed intermediate feature caches so that experiments can be inspected without immediately re-reading all raw feather files.
 
 ## Quick Start
 
@@ -29,10 +22,18 @@ Restore committed compressed feature caches:
 make restore-caches
 ```
 
+`make restore-caches` decompresses the committed `.csv.gz` cache files into the CSV files expected by the quick checks. It is meant for repository-only validation: you can inspect the reported metrics and run lightweight commands without downloading or re-reading tens of GB of original feather logs. It does not download the raw datasets and does not replace the full raw-data runs.
+
 Run static compilation checks:
 
 ```bash
 make compile
+```
+
+Regenerate figures from existing result files:
+
+```bash
+make figures
 ```
 
 Run quick smoke checks:
@@ -42,9 +43,7 @@ make task1-smoke MAX_FILES=300
 make task2-agent-quick
 ```
 
-For full runs, put the data outside Git and point `MEMFAIL_DATA_ROOT` to the
-directory that contains `stage1_feather/`, `stage2_feature/`, and optionally
-`stage2_feather/`:
+For full runs, put the data outside Git and point `MEMFAIL_DATA_ROOT` to the directory that contains `stage1_feather/`, `stage2_feature/`, and optionally `stage2_feather/`:
 
 ```bash
 make task1-full-ab MEMFAIL_DATA_ROOT=/path/to/data
@@ -61,8 +60,7 @@ The experiments were run with these local data directories:
 | `data/stage2_feature` | about 7.9 GB | Stage2 model training and agent search |
 | `data/stage2_feather` | about 46 GB | Optional future raw-log enhancement, not used by the default pipeline |
 
-Original data should be downloaded from the SmartMem/SmartHW release sources or
-competition mirrors described in each subproject's `docs/data.md`.
+Original data should be downloaded from the SmartMem/SmartHW release sources or competition mirrors described in each subproject's `docs/data.md`. Clean-environment validation steps are recorded in `docs/external_validation.md` and `docs/external_validation.zh.md`.
 
 ## Results Summary
 
@@ -82,8 +80,7 @@ Task 2 best results:
 | baseline XGBoost | 0.5405 |
 | agent `xgb_all_none_per_type` | 0.5538 |
 
-The Stage2 submission file is an offline candidate output. It has not been
-submitted to Codabench for a hidden-test F1 score.
+The Stage2 submission file is an offline candidate output. It has not been submitted to Codabench for a hidden-test F1 score.
 
 ## Repository Layout
 
@@ -91,10 +88,12 @@ submitted to Codabench for a hidden-test F1 score.
 oslab-7-memory-failure-prediction/
 ├── m2mfp-reproduction/
 ├── memory-failure-prediction-agent/
+├── docs/
+├── reports/
+├── scripts/
 ├── requirements.txt
 ├── Makefile
 └── README.md
 ```
 
-Each subproject contains its own `README.md`, `docs/`, `configs/`, `src/`,
-`results/`, `reports/`, and `Makefile`.
+Each subproject contains its own `README.md`, `docs/`, `configs/`, `src/`, `results/`, `reports/`, and `Makefile`.
